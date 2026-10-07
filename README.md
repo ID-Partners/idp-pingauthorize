@@ -13,8 +13,14 @@ upgrading.
 | **SPIFFE mTLS** | Gives PingAuthorize a SPIFFE workload identity and admits only callers with SPIRE-issued certificates, so certificates rotate without restarts. | Preview |
 
 Each release includes installable extension bundles for PingAuthorize 10.x and 11.x, and a
-signed list of their checksums. Installation and hardening guides, and a quick start that runs
-the adapter on the public PingAuthorize image (bring your own licence), are on the way.
+signed list of their checksums.
+
+## Start here
+
+- **[Quick start](quickstart/):** the AuthZEN Adapter on the public PingAuthorize 11 image, on
+  your own machine, in about five minutes. Bring your own DevOps credentials.
+- **[Docs](docs/):** installing on your server, upgrading from 1.x, every configuration
+  argument, monitoring, and SPIFFE mTLS.
 
 ## Verifying a download
 

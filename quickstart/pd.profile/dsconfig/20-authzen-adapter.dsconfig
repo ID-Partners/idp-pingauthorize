@@ -1,0 +1,23 @@
+# Register the AuthZEN Adapter. It asks this server's own decision engine over localhost, so
+# trusting the server's self-signed certificate is allowed here; a remote engine needs
+# pdp-trust-store instead.
+#
+# resource-search=query sends resource searches to the engine's query endpoint, as subject and
+# action searches always are.
+dsconfig create-http-servlet-extension \
+    --extension-name "AuthZEN Adapter" \
+    --type third-party \
+    --set "extension-class:com.idpartners.authzen.AuthZenServletExtension" \
+    --set "extension-argument:pdp-url=https://localhost:1443/governance-engine" \
+    --set "extension-argument:query-url=https://localhost:1443/governance-engine/query" \
+    --set "extension-argument:trust-any-server-cert=true" \
+    --set "extension-argument:resource-search=query" \
+    --set "extension-argument:api-key=${AUTHZEN_API_KEY}"
+
+# Serve it on the plain HTTP handler, port 1080, and nothing else there: the server's
+# administrative APIs stay off this port.
+dsconfig set-connection-handler-prop \
+    --handler-name "HTTP Connection Handler" \
+    --set enabled:true \
+    --set listen-port:1080 \
+    --set "http-servlet-extension:AuthZEN Adapter"

@@ -1,0 +1,10 @@
+# The quick start: one PingAuthorize serving the AuthZEN API on http://localhost:1080.
+# Copy .env.example to .env and fill it in first.
+services:
+  pingauthorize:
+    build: .
+    env_file: .env
+    ports:
+      # Plain HTTP, for trying it on your own machine. In production, put TLS in front or serve
+      # the adapter on an HTTPS connection handler.
+      - "127.0.0.1:1080:1080"
