@@ -50,10 +50,13 @@ administrative APIs are not touched.
 
 | Argument | On | Default | What it does |
 | -------- | -- | ------- | ------------ |
-| `spiffe-socket` | both providers | `unix:///spiffe-workload-api/spire-agent.sock` | The Workload API endpoint |
+| `spiffe-socket` | both providers | `unix:///spiffe-workload-api/spire-agent.sock` | The Workload API endpoint. Use a `unix:` address; the Workload API is plaintext, so a `tcp://` one would put it on a network |
 | `workload-api-init-timeout-seconds` | both providers | `15` | How long start-up waits for the first SVID, 1 to 300. Past it the provider starts anyway and keeps trying |
 | `accepted-trust-domain` | trust manager | unset | Repeatable. Only these trust domains get in |
 | `accepted-spiffe-id` | trust manager | unset | Repeatable. Only these workloads get in |
+
+Trust domains are compared without regard to case, as the SPIFFE ID specification says;
+paths are compared exactly.
 
 With neither allow-list set, any workload whose SVID chains to the bundle is admitted. With
 SPIRE federation, that means every federated trust domain, so set `accepted-trust-domain` to

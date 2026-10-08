@@ -32,7 +32,7 @@ The key's fingerprint is `9746 5826 75C7 A5D0 AC41  61B8 F082 1D4B 157C A3DC`.
 ## 3. Install it
 
 ```sh
-<server>/bin/manage-extension --install authzen-adapter-2.0.0-paz11.zip
+<server>/bin/manage-extension --install authzen-adapter-<version>-paz11.zip
 ```
 
 **Building container images on PingAuthorize 11?** Install the bundle into the image at build
@@ -92,5 +92,12 @@ Also new, with defaults that suit a 1.x deployment: `max-request-bytes`, `max-ba
 `max-search-results` and `request-deadline-millis`. A decision whose `authorised` or
 `authorized` is not a JSON boolean is now a `502`, not a permit.
 
-To upgrade, install the new bundle over the old one with `manage-extension --update`, set any
-arguments the table calls for, and restart the handlers that serve the adapter.
+Set any arguments the table calls for first, then:
+
+- **A server installed on a host:** `manage-extension --update <new bundle>`. It stops the
+  server, replaces the extension and starts the server again. Your registration is kept.
+- **A container image:** rebuild the image with the new bundle installed, as in step 3, and
+  redeploy. Don't run `manage-extension --update` inside a running container: stopping the
+  server stops the container, the update is cut off, and the old version comes back.
+
+An upgrade from 1.2.0 to 2.0.0 was tested both ways on PingAuthorize 11.1.

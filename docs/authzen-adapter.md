@@ -126,7 +126,10 @@ when the request carries a `page` object, or when the result set is bigger than
 `max-search-results`. A paged response carries `page.next_token` (empty on the last page),
 `count` and `total`; repeat the request with the token for the next page.
 
-## Decision events (SSF)
+## Decision events (SSF, preview)
+
+The SSF Transmitter is a **preview**: use it for visibility and demonstration, not as a system
+of record. Its limits are listed below.
 
 Setting `ssf-shared-secret` makes the adapter an
 [OpenID Shared Signals Framework 1.0](https://openid.net/specs/openid-sharedsignals-framework-1_0.html)
@@ -155,7 +158,8 @@ resource, decision and any advice. Unless `ssf-receiver-allow` lists it, a Recei
 before each delivery.
 
 Know its limits before you rely on it:
-- It keeps one stream, in memory. The Receiver re-registers after a restart.
+- It keeps one stream, in memory, per server. Each replica of a scaled-out deployment has its
+  own, and a restart loses it until the Receiver registers again.
 - Delivery is push (RFC 8935) only, without retries.
 - Delivery runs on its own thread, so a slow Receiver never delays a decision. Events past a
   queue of 256 are dropped and counted.
@@ -224,6 +228,25 @@ decision log.
 **Error log.** Start-up warnings for `allow-unauthenticated` and `trust-any-server-cert`, refused
 SPIFFE peers, engine errors behind a `502` or `504`, unexpected failures, and SSF delivery
 failures (at most one report a minute).
+
+## Performance
+
+Measured on 2.0.1 against PingAuthorize 11.1 with the [quick start](../quickstart/)'s example
+policy, on one machine shared with other workloads, so take these as a floor. The mix was 70%
+single evaluations, 20% batches of ten and 10% subject searches. No request failed.
+
+| Concurrent callers | Requests/s | Evaluation, median | Evaluation, 95th percentile |
+| ------------------ | ---------- | ------------------ | --------------------------- |
+| 1 | ~300 | 1.4 ms | 3.7 ms |
+| 10 | ~1,200 | 2 ms | 10 ms |
+| 100 | ~1,060 | 21 ms | 260 ms |
+
+A batch of ten is ten decisions, so decisions per second run higher than requests per second.
+The example policy is small and calls no attribute sources. Yours will differ, so measure with
+your own policy and hardware before sizing.
+
+The adapter keeps a pool of connections to the governance engine, so TLS is negotiated once per
+connection, not per decision.
 
 ## Conformance
 
