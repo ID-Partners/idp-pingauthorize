@@ -14,7 +14,7 @@ Talk to us before relying on one we haven't tested.
 
 | Extension | Status |
 | --------- | ------ |
-| AuthZEN Adapter | Generally available. Its SSF Transmitter is a preview. |
+| AuthZEN Adapter | Generally available, its SSF Transmitter included from 2.1.0. |
 | SPIFFE mTLS | Preview. Its configuration may change before 1.0. |
 
 ## Getting help

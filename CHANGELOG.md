@@ -4,6 +4,21 @@ Full notes, with downloads, are on each [release](../../releases).
 
 ## AuthZEN Adapter
 
+### 2.1.0
+
+- Decision events are a full SSF 1.0 Transmitter: events signed ES256, ES384 or RS256 and
+  verified against `/ssf/jwks`; several streams, each with its own queue; stream update, replace,
+  status and verification; retries with backoff; `sub_id` and `txn` on every event; request
+  context only when named. No longer a preview. The event type and payload change - see
+  [Upgrading from 2.0](docs/install.md#upgrading-the-authzen-adapter-from-20).
+- A malformed or contradictory decision from the governance engine is never a permit: an
+  evaluation fails with `502`, and a resource search returns nothing from it.
+- The engine timeout covers the whole response, and responses have a size limit,
+  `max-pdp-response-bytes`.
+- Statement-based resource search forwards the request context, and ignores a caller-supplied
+  resource id in flat attributes.
+- SSF delivery connects only to the Receiver addresses it checked.
+
 ### 2.0.1
 
 - Pooled connections to the governance engine: steady throughput under load, where 2.0.0 fell

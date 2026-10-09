@@ -15,12 +15,15 @@ server, so there is no proxy to run between your PEPs and the PDP.
 | `POST` | `/access/v1/search/action` | What may this subject do to this resource? |
 | `GET`  | `/.well-known/authzen-configuration` | AuthZEN metadata, public |
 | `GET`  | `/.well-known/ssf-configuration` | SSF Transmitter metadata, public, when SSF is on |
-| `POST` `GET` `DELETE` | `/ssf/stream` | SSF stream management, when SSF is on |
+| `GET`  | `/ssf/jwks` | The key decision events are signed with, public, when SSF is on with a key file |
+| `POST` `GET` `PATCH` `PUT` `DELETE` | `/ssf/stream` | SSF stream management, when SSF is on |
+| `GET` `POST` | `/ssf/status` | SSF stream status, when SSF is on |
+| `POST` | `/ssf/verify` | SSF stream verification, when SSF is on |
 
 ## Who may call it
 
 The adapter will not start without a way to authenticate callers. Every endpoint except the two
-`/.well-known/` documents checks, in this order:
+`/.well-known/` documents and `/ssf/jwks` checks, in this order:
 
 1. **A listed workload.** On an mTLS handler, a caller whose SPIFFE ID is in
    `accepted-spiffe-id` is admitted without a key. See [SPIFFE mTLS](spiffe-mtls.md).
@@ -32,8 +35,9 @@ The adapter will not start without a way to authenticate callers. Every endpoint
 `allow-unauthenticated=true` admits anyone who can reach the handler when no key and no SPIFFE
 ID are set. It is for a test bench, and the server logs a severe warning when it is on.
 
-SSF stream management has its own credential, `ssf-management-key`. Every PEP holds the API
-key, and a PEP that could repoint the stream could read every decision the PDP makes.
+SSF stream management, status and verification have their own credential, `ssf-management-key`.
+Every PEP holds the API key, and a PEP that could repoint a stream could read every decision the
+PDP makes.
 
 ## What it refuses before asking the policy
 
@@ -126,23 +130,43 @@ when the request carries a `page` object, or when the result set is bigger than
 `max-search-results`. A paged response carries `page.next_token` (empty on the last page),
 `count` and `total`; repeat the request with the token for the next page.
 
-## Decision events (SSF, preview)
+## Decision events (SSF)
 
-The SSF Transmitter is a **preview**: use it for visibility and demonstration, not as a system
-of record. Its limits are listed below.
-
-Setting `ssf-shared-secret` makes the adapter an
+Give the adapter a signing key and it becomes an
 [OpenID Shared Signals Framework 1.0](https://openid.net/specs/openid-sharedsignals-framework-1_0.html)
-Transmitter. It publishes one Security Event Token per decision to a Receiver you register.
-Because every PEP asks through the adapter, this is one place that sees every decision.
+Transmitter: it pushes one signed Security Event Token per decision to every stream that asks
+for decisions. Because every PEP asks through the adapter, this is one place that sees every
+decision - a SIEM, a fraud engine or a session service can take them all from one feed.
+
+```sh
+# an ES256 key, with its public key appended
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ssf-signing.pem
+openssl pkey -in ssf-signing.pem -pubout >> ssf-signing.pem
+```
+
+Set `ssf-signing-key-file` to that file, `ssf-issuer` to the `https` URL Receivers reach the
+server on, and `ssf-management-key`. ES256, ES384 and RS256 (2048 bits or more) keys are
+accepted, and the key pair is checked at startup. Receivers verify events with the public key at
+`/ssf/jwks` and hold no secret. `ssf-shared-secret` (HS256) is the alternative for one Receiver
+you trust with the secret, since whoever can verify an HS256 event can also forge one.
+
+| Path | What |
+| ---- | ---- |
+| `GET /.well-known/ssf-configuration` | Transmitter metadata, public |
+| `GET /ssf/jwks` | The signing key, public |
+| `/ssf/stream` | `POST` create, `GET` read (or list, without `stream_id`), `PATCH` update, `PUT` replace, `DELETE` |
+| `/ssf/status` | `GET` and `POST`: `enabled`, `paused` (events held), `disabled` (events dropped) |
+| `POST /ssf/verify` | Ask for a verification event; at most one per stream every 10 seconds |
+
+Stream management, status and verification take `ssf-management-key`; the API key opens none of
+them.
 
 ```sh
 curl -s https://<server>/ssf/stream \
   -H "Authorization: Bearer <ssf-management-key>" \
   -H 'Content-Type: application/json' \
   -d '{
-    "aud": "receiver-app",
-    "events_requested": ["https://schemas.idpartners.com.au/ssf/authzen-decision"],
+    "events_requested": ["https://schemas.idpartners.com.au/secevent/authzen/event-type/decision"],
     "delivery": {
       "method": "urn:ietf:rfc:8935",
       "endpoint_url": "https://receiver.example/events",
@@ -151,19 +175,36 @@ curl -s https://<server>/ssf/stream \
   }'
 ```
 
-`GET /ssf/stream?stream_id=<id>` reads it back, and `DELETE` removes it. Each event is a Security
-Event Token (RFC 8417) signed HS256 with the shared secret, carrying the subject, action,
-resource, decision and any advice. Unless `ssf-receiver-allow` lists it, a Receiver's
-`endpoint_url` must be `https` and resolve only to public addresses. That check is repeated
-before each delivery.
+**The event.** Each Security Event Token (RFC 8417) carries the decision's subject as `sub_id`,
+and `txn`: the PEP's `X-Request-ID` when it sent one, so an event can be matched to its request.
+Under the event type:
 
-Know its limits before you rely on it:
-- It keeps one stream, in memory, per server. Each replica of a scaled-out deployment has its
-  own, and a restart loses it until the Receiver registers again.
-- Delivery is push (RFC 8935) only, without retries.
-- Delivery runs on its own thread, so a slow Receiver never delays a decision. Events past a
-  queue of 256 are dropped and counted.
-- Signing is symmetric: a Receiver that can verify events can also forge them.
+```json
+{
+  "subject": { "type": "agent", "id": "agent-42" },
+  "action": { "name": "transfer" },
+  "resource": { "type": "account", "id": "acct-1" },
+  "decision": false,
+  "context": { "step_up_required": true, "reason": "over the limit" },
+  "request_context": { "amount": 100 },
+  "event_timestamp": 1760000000
+}
+```
+
+`context` is what the policy returned with the decision. Subject, action and resource
+`properties` are never sent. `request_context` carries only the request-context keys named in
+`ssf-event-context-attribute`, none by default.
+
+**Delivery.** Publishing never delays a decision. Each stream has its own queue (1,000 events)
+and delivery thread, and its events go in order. A failure that can pass - no connection, a
+timeout, a `5xx`, `408` or `429` - is retried with the same event after 1, 2, 4 and 8 seconds; a
+Receiver's other `4xx`, or a redirect, is final. Unless `ssf-receiver-allow` lists it, a
+Receiver's `endpoint_url` must be `https` and resolve only to public addresses. That is checked
+at creation and before every delivery, and delivery connects only to the addresses checked.
+
+**Streams are held in memory.** A restart loses them, and each replica of a scaled-out deployment
+has its own. A Receiver that gets `404` for its stream creates it again; verification lets it
+check without waiting for an event.
 
 ## Configuration
 
@@ -180,7 +221,8 @@ Know its limits before you rely on it:
 | `allow-unauthenticated` | `false` | `true` admits anyone when no key or SPIFFE ID is set. Test benches only |
 | `trust-any-server-cert` | `false` | Trust the engine's certificate unchecked. Accepted only for a loopback `pdp-url` and `query-url`, for the server's own self-signed certificate |
 | `pdp-trust-store` | unset | PEM file of the CAs a remote engine's certificate must chain to. Hostnames are still checked |
-| `timeout-millis` | `12000` | Timeout for one engine call |
+| `timeout-millis` | `12000` | Timeout for one engine call, through the end of its response |
+| `max-pdp-response-bytes` | `4194304` | Largest engine response accepted. Past it the call fails with `502` |
 | `request-deadline-millis` | `30000` | Budget for one batch. Past it the batch fails with `504` |
 | `max-request-bytes` | `1048576` | Largest body accepted |
 | `max-batch-size` | `100` | Most entries in one batch |
@@ -189,10 +231,13 @@ Know its limits before you rely on it:
 | `flat-tuple` | `false` | Also send flat attributes (see above) |
 | `resource-search` | `statement` | `statement` or `query` (see Search) |
 | `batch-defaults` | `replace` | `replace` or `fill` (see above) |
-| `ssf-shared-secret` | unset | Turns SSF on. At least 32 bytes |
-| `ssf-management-key` | unset | Bearer key for `/ssf/stream`. Required with SSF; 32+ characters, not the api-key |
-| `ssf-issuer` | `https://localhost:1443` | The `iss` of the events |
+| `ssf-signing-key-file` | unset | PEM file of the key events are signed with (ES256, ES384 or RS256). Turns SSF on |
+| `ssf-shared-secret` | unset | Instead of a key file: an HS256 secret of at least 32 bytes, for one trusted Receiver. Turns SSF on |
+| `ssf-management-key` | unset | Bearer key for `/ssf/stream`, `/ssf/status` and `/ssf/verify`. Required with SSF; 32+ characters, not the api-key |
+| `ssf-issuer` | `https://localhost:1443` | The `iss` of the events: an `https` URL with no query or fragment |
 | `ssf-receiver-allow` | unset | Repeatable. Receiver URLs, or prefixes, allowed besides public `https` ones |
+| `ssf-event-context-attribute` | unset | Repeatable. A request-context key to include in each decision event |
+| `ssf-max-streams` | `10` | Most streams kept at once, 1 to 100 |
 
 Every numeric argument must be a positive integer. A bad value stops setup with a message
 naming it.
@@ -214,13 +259,16 @@ ldapsearch --baseDN cn=monitor "(ds-extension-monitor-name=AuthZEN Adapter)"
 | `responses-400-bad-request`, `-401-unauthorized`, `-413-too-large` | refusals |
 | `responses-502-pdp-error`, `-504-pdp-timeout`, `-500-server-error` | failures |
 | `pdp-calls`, `pdp-average-millis`, `pdp-max-millis` | engine calls and their latency |
-| `ssf-enabled`, `ssf-events-dropped`, `ssf-deliveries-failed` | the SSF Transmitter |
+| `ssf-enabled`, `ssf-streams`, `ssf-events-queued` | the SSF Transmitter: on or off, its streams, events waiting |
+| `ssf-events-delivered`, `ssf-events-undelivered`, `ssf-events-dropped` | events acknowledged; given up after their retries or refused; not queued because a stream's queue was full |
+| `ssf-deliveries-failed` | push attempts that failed, retries included |
 
 A rising `responses-401-unauthorized` is someone without the key; a rising `pdp-max-millis` is
 the engine slowing before it times out.
 
 **Trace log.** Each request writes one line to the server's trace log with `endpoint`,
-`method`, `status`, `caller` (`api-key`, `spiffe:<id>`, `unauthenticated` or `none`), `permits`,
+`method`, `status`, `caller` (`api-key`, `spiffe:<id>`, `ssf-management-key`, `unauthenticated` or
+`none`), `permits`,
 `denies`, `elapsed_ms` and the PEP's `request_id`. It never includes the request body, the
 subject or a credential. The decision itself, with its attributes, is in PingAuthorize's
 decision log.

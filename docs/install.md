@@ -71,6 +71,26 @@ A handler reads its servlet list when it starts, so disable and re-enable it (or
 server) after changing the list. Serving the adapter on more than one handler is fine: it is
 still one adapter, with one set of counters.
 
+## Upgrading the AuthZEN Adapter from 2.0
+
+A deployment that does not use SSF needs no configuration change. Two things it may notice: a
+governance-engine response whose decision fields disagree or have the wrong type fails an
+evaluation with `502` and gives a resource search no resources, and responses over `max-pdp-response-bytes` (4 MiB) are refused.
+
+The 2.0 SSF Transmitter was a preview, and its Receivers need updating for 2.1:
+
+| 2.0 | 2.1 | What to do |
+| --- | --- | ---------- |
+| HS256 with `ssf-shared-secret` | `ssf-signing-key-file` (ES256, ES384, RS256), published at `/ssf/jwks`; `ssf-shared-secret` still accepted | Move to a key file, so Receivers verify without a secret |
+| Event type `https://schemas.idpartners.com.au/ssf/authzen-decision`, flat payload | `https://schemas.idpartners.com.au/secevent/authzen/event-type/decision`, with `sub_id` and `txn` on the event | Request the new event type and read the [new payload](authzen-adapter.md#decision-events-ssf) |
+| A fixed list of request-context keys in `attrs` | None unless named in `ssf-event-context-attribute` | List the keys your Receivers need |
+| One stream; a second create replaced the first | Up to `ssf-max-streams`; past it a create is `409` | - |
+| Reading a stream returned its `authorization_header` | Never read back | - |
+| `DELETE` of an unknown stream was `204` | `404` | - |
+| `ssf-issuer` could be any string | An `https` URL with no query or fragment | Fix it if it was not |
+
+Then update as below.
+
 ## Upgrading the AuthZEN Adapter from 1.x
 
 2.0.0 changes defaults that let a 1.x deployment run open. A 1.x registration that relied on
