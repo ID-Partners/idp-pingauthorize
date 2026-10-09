@@ -49,6 +49,11 @@ Upgrading from a 1.x build: see [Installing](docs/install.md#upgrading-the-authz
 
 ## SPIFFE mTLS
 
+### 0.1.2 (preview)
+
+- A failed change of `spiffe-socket` no longer stops the startup retry on the socket still in
+  use, so a server waiting for its SPIRE agent still recovers without a restart.
+
 ### 0.1.1 (preview)
 
 - java-spiffe 0.8.17, clearing published advisories against the libraries 0.8.12 bundled.
