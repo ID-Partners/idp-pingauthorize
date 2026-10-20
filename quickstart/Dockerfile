@@ -7,8 +7,8 @@ ENV MAX_HEAP_SIZE=1g
 
 # The released bundle for PingAuthorize 11, checked against the SHA256SUMS published with it.
 USER root
-ADD --checksum=sha256:77bbc3c717cceba433854a688f9a29f6fd70604a9e4c8110267c98b0c72dee2a \
-    https://github.com/ID-Partners/idp-pingauthorize/releases/download/authzen-adapter-v2.2.0/authzen-adapter-2.2.0-paz11.zip \
+ADD --checksum=sha256:747867eff3854139a8eec42a4bf018396de2c828873309d25f47d7c46d63d6b6 \
+    https://github.com/ID-Partners/idp-pingauthorize/releases/download/authzen-adapter-v2.3.0/authzen-adapter-2.3.0-paz11.zip \
     /tmp/authzen-adapter.zip
 # Installed into the image, not delivered through the server profile: on 11.1 the profile route
 # stops setup with "Server Already Configured".
